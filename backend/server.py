@@ -4,7 +4,8 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, UploadFile, File
+from fastapi.responses import Response
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
@@ -27,6 +28,23 @@ EMAIL_BASE_URL = "https://integrations.emergentagent.com"
 EMAIL_KEY = os.environ["EMERGENT_EMAIL_KEY"]
 EMAIL_FROM_NAME = os.environ["EMAIL_FROM_NAME"]
 OWNER_EMAIL = os.environ["OWNER_EMAIL"]
+
+# ---------- Object storage (photo uploads) ----------
+STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
+STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
+EMERGENT_KEY = os.environ["EMERGENT_LLM_KEY"]
+STORAGE_APP = "stay-coral"
+storage_key = None
+
+async def init_storage(force: bool = False) -> str:
+    global storage_key
+    if storage_key and not force:
+        return storage_key
+    async with httpx.AsyncClient(timeout=30) as c:
+        r = await c.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY})
+    r.raise_for_status()
+    storage_key = r.json()["storage_key"]
+    return storage_key
 
 
 # ---------- Auth helpers ----------
@@ -198,6 +216,47 @@ async def list_inquiries(admin: dict = Depends(require_admin)):
     return await db.inquiries.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
 
 
+# ---------- Photo upload & serving ----------
+ALLOWED_IMG = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+               "webp": "image/webp", "gif": "image/gif", "heic": "image/heic"}
+
+@api_router.post("/admin/upload")
+async def upload_image(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower()
+    if ext not in ALLOWED_IMG:
+        raise HTTPException(status_code=400, detail="Only JPG, PNG, WEBP, GIF or HEIC images are allowed")
+    data = await file.read()
+    if len(data) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image too large (max 15MB)")
+    path = f"{STORAGE_APP}/properties/{uuid.uuid4()}.{ext}"
+    key = await init_storage()
+    async with httpx.AsyncClient(timeout=120) as c:
+        r = await c.put(f"{STORAGE_URL}/objects/{path}",
+                        headers={"X-Storage-Key": key, "Content-Type": ALLOWED_IMG[ext]}, content=data)
+        if r.status_code == 404:
+            key = await init_storage(force=True)
+            r = await c.put(f"{STORAGE_URL}/objects/{path}",
+                            headers={"X-Storage-Key": key, "Content-Type": ALLOWED_IMG[ext]}, content=data)
+    r.raise_for_status()
+    return {"url": f"/api/images/{r.json()['path']}"}
+
+@api_router.get("/images/{path:path}")
+async def serve_image(path: str):
+    if not path.startswith(f"{STORAGE_APP}/"):
+        raise HTTPException(status_code=404, detail="Not found")
+    key = await init_storage()
+    async with httpx.AsyncClient(timeout=60) as c:
+        r = await c.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key})
+        if r.status_code == 404:
+            key = await init_storage(force=True)
+            r = await c.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key})
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="Image not found")
+    r.raise_for_status()
+    return Response(content=r.content, media_type=r.headers.get("Content-Type", "image/jpeg"),
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
 # ---------- Seed ----------
 SEED_PROPERTIES = [
     {
@@ -272,6 +331,11 @@ SEED_PROPERTIES = [
 
 @app.on_event("startup")
 async def startup():
+    try:
+        await init_storage()
+        logger.info("Object storage initialized")
+    except Exception as e:
+        logger.error(f"Storage init failed: {e}")
     admin_email = os.environ["ADMIN_EMAIL"].lower()
     admin_pw = os.environ["ADMIN_PASSWORD"]
     existing = await db.admins.find_one({"email": admin_email})

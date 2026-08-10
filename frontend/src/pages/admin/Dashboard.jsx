@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { LogOut, Plus, Pencil, Trash2, X, Inbox, Home as HomeIcon } from "lucide-react";
+import { LogOut, Plus, Pencil, Trash2, X, Inbox, Home as HomeIcon, UploadCloud, Star, ChevronLeft, ChevronRight, Loader2, Link as LinkIcon } from "lucide-react";
 import { api, getProperties } from "../../lib/api";
 
 const EMPTY = {
@@ -97,7 +97,7 @@ export default function Dashboard() {
 }
 
 function PropertyForm({ data, onClose, onSave }) {
-  const [f, setF] = useState({ ...data, amenities: (data.amenities || []).join("\n"), images: (data.images || []).join("\n") });
+  const [f, setF] = useState({ ...data, amenities: (data.amenities || []).join("\n"), images: data.images || [] });
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
   const submit = (e) => {
     e.preventDefault();
@@ -106,7 +106,7 @@ function PropertyForm({ data, onClose, onSave }) {
       guests: +f.guests, bedrooms: +f.bedrooms, bathrooms: +f.bathrooms, order: +f.order,
       lat: parseFloat(f.lat), lng: parseFloat(f.lng), featured: !!f.featured,
       amenities: f.amenities.split("\n").map((s) => s.trim()).filter(Boolean),
-      images: f.images.split("\n").map((s) => s.trim()).filter(Boolean),
+      images: f.images,
     });
   };
   const inp = "w-full border border-sand rounded-lg px-3 py-2 text-sm text-coffee bg-white outline-none focus:border-coral";
@@ -133,11 +133,104 @@ function PropertyForm({ data, onClose, onSave }) {
           <label className="text-xs text-coffee col-span-2">Airbnb URL<input value={f.airbnb_url || ""} onChange={set("airbnb_url")} className={inp}/></label>
           <label className="text-xs text-coffee col-span-2">Booking.com URL<input value={f.booking_url || ""} onChange={set("booking_url")} className={inp}/></label>
           <label className="text-xs text-coffee col-span-2">Amenities (one per line)<textarea rows={4} value={f.amenities} onChange={set("amenities")} className={inp}/></label>
-          <label className="text-xs text-coffee col-span-2">Image URLs (one per line)<textarea rows={4} value={f.images} onChange={set("images")} className={inp}/></label>
+          <div className="col-span-2">
+            <span className="text-xs text-coffee">Fotos (la primera es la portada)</span>
+            <ImageManager images={f.images} onChange={(imgs) => setF((s) => ({ ...s, images: imgs }))} />
+          </div>
           <label className="text-xs text-coffee flex items-center gap-2 col-span-2"><input type="checkbox" checked={f.featured} onChange={(e) => setF((s) => ({ ...s, featured: e.target.checked }))}/> Featured (flagship on homepage)</label>
         </div>
         <button data-testid="property-form-save" type="submit" className="w-full mt-6 rounded-full bg-coral text-white py-3 text-xs tracking-widest uppercase hover:bg-coral-dark">Save Property</button>
       </form>
+    </div>
+  );
+}
+
+function ImageManager({ images, onChange }) {
+  const [uploading, setUploading] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
+  const inputRef = React.useRef(null);
+
+  const uploadFiles = async (files) => {
+    const list = Array.from(files).filter((fl) => fl.type.startsWith("image/") || /\.(jpe?g|png|webp|gif|heic)$/i.test(fl.name));
+    if (!list.length) { toast.error("Selecciona archivos de imagen (JPG, PNG, WEBP)"); return; }
+    setUploading((n) => n + list.length);
+    const added = [];
+    for (const file of list) {
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        const r = await api.post("/admin/upload", fd);
+        added.push(r.data.url);
+      } catch (e) {
+        toast.error(e.response?.data?.detail || `Error subiendo ${file.name}`);
+      } finally {
+        setUploading((n) => n - 1);
+      }
+    }
+    if (added.length) { onChange([...images, ...added]); toast.success(`${added.length} foto(s) subida(s)`); }
+  };
+
+  const move = (i, dir) => {
+    const next = [...images];
+    const j = i + dir;
+    if (j < 0 || j >= next.length) return;
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange(next);
+  };
+  const makeCover = (i) => onChange([images[i], ...images.filter((_, k) => k !== i)]);
+  const remove = (i) => onChange(images.filter((_, k) => k !== i));
+  const addUrl = () => {
+    const u = urlInput.trim();
+    if (!u) return;
+    onChange([...images, u]);
+    setUrlInput("");
+  };
+
+  const btn = "bg-white/90 text-coffee rounded-full p-1.5 hover:bg-coral hover:text-white transition-colors";
+  return (
+    <div data-testid="image-manager" className="mt-1">
+      <div
+        data-testid="image-dropzone"
+        onClick={() => inputRef.current?.click()}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => { e.preventDefault(); setDragOver(false); uploadFiles(e.dataTransfer.files); }}
+        className={`cursor-pointer border-2 border-dashed rounded-xl p-6 text-center transition-colors ${dragOver ? "border-coral bg-coral/5" : "border-sand bg-white"}`}
+      >
+        <input ref={inputRef} data-testid="image-file-input" type="file" accept="image/*" multiple className="hidden"
+               onChange={(e) => { uploadFiles(e.target.files); e.target.value = ""; }} />
+        {uploading > 0 ? (
+          <span className="flex items-center justify-center gap-2 text-sm text-coffee"><Loader2 size={16} className="animate-spin"/> Subiendo {uploading} foto(s)…</span>
+        ) : (
+          <span className="flex items-center justify-center gap-2 text-sm text-charcoal/60"><UploadCloud size={18}/> Arrastra tus fotos aquí o haz clic para seleccionar</span>
+        )}
+      </div>
+
+      {images.length > 0 && (
+        <div className="grid grid-cols-3 gap-3 mt-3">
+          {images.map((url, i) => (
+            <div key={`${url}-${i}`} data-testid={`image-thumb-${i}`} className="relative group rounded-lg overflow-hidden aspect-square bg-sand/30">
+              <img src={url} alt="" className="w-full h-full object-cover" />
+              {i === 0 && <span className="absolute top-1.5 left-1.5 bg-coral text-white text-[10px] tracking-widest uppercase px-2 py-0.5 rounded-full">Portada</span>}
+              <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 p-1.5 bg-gradient-to-t from-coffee/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                <button type="button" title="Mover izquierda" onClick={() => move(i, -1)} className={btn} data-testid={`image-move-left-${i}`}><ChevronLeft size={13}/></button>
+                {i !== 0 && <button type="button" title="Hacer portada" onClick={() => makeCover(i)} className={btn} data-testid={`image-make-cover-${i}`}><Star size={13}/></button>}
+                <button type="button" title="Eliminar" onClick={() => remove(i)} className={btn} data-testid={`image-delete-${i}`}><Trash2 size={13}/></button>
+                <button type="button" title="Mover derecha" onClick={() => move(i, 1)} className={btn} data-testid={`image-move-right-${i}`}><ChevronRight size={13}/></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex gap-2 mt-3">
+        <input data-testid="image-url-input" value={urlInput} onChange={(e) => setUrlInput(e.target.value)}
+               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addUrl(); } }}
+               placeholder="O pega una URL de imagen…"
+               className="flex-1 border border-sand rounded-lg px-3 py-2 text-sm text-coffee bg-white outline-none focus:border-coral" />
+        <button type="button" data-testid="image-url-add" onClick={addUrl} className="rounded-lg bg-sand/50 text-coffee px-3 hover:bg-sand transition-colors"><LinkIcon size={15}/></button>
+      </div>
     </div>
   );
 }

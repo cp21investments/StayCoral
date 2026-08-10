@@ -29,3 +29,9 @@ Brand → Experience → Trust → Direct Booking. Bilingual EN default. Subtle 
 
 ## Next Tasks
 Owner to upload real images + confirm amenities per property; then connect a booking engine.
+
+## Update — Junio 2026: Cargador de Fotos (Admin)
+- Integración de Emergent Object Storage (EMERGENT_LLM_KEY en backend/.env).
+- Backend: POST /api/admin/upload (JWT, valida JPG/PNG/WEBP/GIF/HEIC, máx 15MB) y GET /api/images/{path} (público, cache 1 año).
+- Frontend: componente ImageManager en el formulario de propiedades del admin — drag & drop, multi-subida, eliminar, reordenar (flechas), botón "hacer portada", input opcional de URL.
+- Probado: curl e2e (upload 200, serve 200, sin auth 401, tipo inválido 400) + screenshot del panel admin OK.
