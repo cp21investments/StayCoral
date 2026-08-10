@@ -1,0 +1,54 @@
+{
+  "summary": "Full backend + frontend E2E test of Stay Coral Collection. Backend: 26 pytest cases (properties list/filter/slug/404, inquiries validation + persistence, admin auth incl. bcrypt hash format & case-insensitive email, admin route protection, full property CRUD lifecycle) — all 26 passed. Frontend: homepage (hero/nav/whatsapp float/footer), collection tabs (3 historic / 2 manga), EN|ES switcher (nav + hero copy + localStorage scc_lang), /stays tabs (all/historic/manga counts correct), card -> /stays/:slug detail (3 gallery images, booking widget, Airbnb link, no broken images), 'Request to Book' -> /contact with property prefilled, contact submit -> success toast 'Thank you — we'll be in touch shortly' + inquiry visible in admin, admin login (wrong pw shows error, correct pw lands on dashboard with 5 properties + Inquiries tab), admin UI property create/edit/delete verified against public API, logout clears scc_token. /cartagena, /about, /journal render. Mobile (390px) menu + cards OK. One real UI defect found: navbar link/logo overlap in Spanish at <=1280px width.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/auth/login", "issue": "No rate limiting / brute-force lockout — unlimited wrong-password attempts return 401 with no lockout (playbook asked for lockout after 5 fails). Also no httpOnly cookie session; token returned in JSON and stored in localStorage (XSS exposure)."},
+      {"endpoint": "startup seed", "issue": "Seed else-branch is a no-op: update_one({'slug':...}, {'$setOnInsert': {}}) does nothing, so existing property docs are never backfilled when SEED_PROPERTIES change. Dead/misleading code."},
+      {"endpoint": "CORS", "issue": "CORS_ORIGINS=\"*\" combined with allow_credentials=True is an invalid/ineffective combination per CORS spec; use explicit origins."},
+      {"endpoint": "/api/admin/properties (PUT)", "issue": "Body accepts client-supplied id and slug, so a PUT can silently rewrite the id or rename the slug of an existing doc; no immutability guard."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Navbar", "issue": "Spanish nav labels overlap the absolutely-centered 'STAY CORAL' logo at viewport widths ~1024-1400px (measured @1280: last link right edge 651px vs logo left 551px — 'CONTACTO' renders on top of the logo). Reproduced with screenshot.", "selector": "[data-testid=\"nav-logo\"], [data-testid=\"nav-contact\"]", "priority": "HIGH"},
+      {"component": "Admin Dashboard property rows", "issue": "Edit/Delete icon buttons and property rows had no data-testid (blocked automated CRUD testing). FIXED by test agent: added admin-property-row-{slug}, admin-edit-{slug}, admin-delete-{slug}.", "selector": "[data-testid=\"admin-edit-{slug}\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Contact page & Property detail booking widget", "issues": ["Uses raw native <input type=\"date\"> (browser default picker with mm/dd/yyyy) instead of a shadcn Calendar/Popover — inconsistent with the premium visual language", "Contact page bottom-left area has a large empty whitespace block on desktop (form column much taller than info column)"]},
+      {"screen": "Global toast", "issues": ["Sonner toast renders top-center and overlays the fixed navbar logo/links"]},
+      {"screen": "/cartagena, /about, /journal", "issues": ["Very thin content (735-963 chars of text) compared to the homepage; journal shows only 'coming soon' placeholders — acceptable for Phase 1 but visibly sparse"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/cleanup_test_data.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix navbar overlap: make the logo part of the flex row (or reduce lg gap / raise the lg breakpoint) so Spanish labels never collide with the centered logo between ~1024-1400px.",
+    "Add brute-force protection (attempt counter + lockout) on /api/auth/login if the security playbook requirement applies; consider httpOnly cookie session instead of localStorage token.",
+    "Remove/implement the no-op seed update branch ($setOnInsert: {}) so seed changes actually backfill existing docs.",
+    "Restrict CORS_ORIGINS to explicit origins since allow_credentials=True is set.",
+    "Optional polish: replace native date inputs with shadcn Calendar; offset toast below the navbar; fill contact page whitespace."
+  ],
+  "critical_code_review_comments": [
+    "server.py startup(): `await db.properties.update_one({'slug': p['slug']}, {'$setOnInsert': {}})` is a no-op — the comment claims backfill but nothing is written.",
+    "PUT /api/admin/properties/{slug} $sets the whole client payload including `id` and `slug`; exclude immutable fields server-side.",
+    "/api/auth/login has no throttling; JWT valid 7 days with no refresh/revoke path.",
+    "allow_origins=['*'] with allow_credentials=True is contradictory CORS config."
+  ],
+  "updated_files": [
+    "/app/frontend/src/pages/admin/Dashboard.jsx (added data-testid to property rows + edit/delete buttons)",
+    "/app/backend/tests/backend_test.py (new)",
+    "/app/backend/tests/cleanup_test_data.py (new)"
+  ],
+  "success_rate": {"backend": "100% (26/26)", "frontend": "~95% (all flows pass; 1 responsive navbar overlap bug)"},
+  "seed_data_creation": "Created TEST_ inquiries (4) and a temp property test-ui-prop-qa1 during testing; all removed via /app/backend/tests/cleanup_test_data.py. DB back to 5 seeded properties, 0 inquiries.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "cp21investements@gmail.com / Jipocapoipo07! (from /app/memory/test_credentials.md) — verified working via API and /admin/login",
+  "context_for_next_testing_agent": "Backend suite at /app/backend/tests/backend_test.py (pytest.ini forces -n 2 --dist loadscope; all 26 pass in ~5s). Cleanup helper: /app/backend/tests/cleanup_test_data.py deletes TEST_*/test-* docs. Admin CRUD testids now exist: admin-property-row-{slug}, admin-edit-{slug}, admin-delete-{slug}. Email via Emergent Resend proxy returns 202 in backend logs — working. Only open frontend defect: navbar/logo overlap in ES at 1024-1400px width.",
+  "rca_of_the_issue": "Navbar overlap: the logo Link uses `absolute left-1/2 -translate-x-1/2` while the nav links live in the same flex row with gap-8; the logo is therefore outside the flex sizing calculation, so longer Spanish labels grow rightwards past the viewport centre and paint under/over the logo below ~1400px."
+}

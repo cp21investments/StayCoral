@@ -1,0 +1,57 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400;1,500&family=Inter:wght@300;400;500;600&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        --background: 40 33% 95%;
+        --foreground: 20 24% 19%;
+        --card: 0 0% 100%;
+        --card-foreground: 20 24% 19%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 20 24% 19%;
+        --primary: 20 24% 19%;
+        --primary-foreground: 40 33% 95%;
+        --secondary: 34 30% 78%;
+        --secondary-foreground: 20 24% 19%;
+        --muted: 34 30% 88%;
+        --muted-foreground: 20 10% 40%;
+        --accent: 13 47% 62%;
+        --accent-foreground: 0 0% 100%;
+        --destructive: 0 72% 51%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 34 25% 82%;
+        --input: 34 25% 82%;
+        --ring: 13 47% 62%;
+        --radius: 0.5rem;
+    }
+}
+
+* { border-color: hsl(var(--border)); }
+
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+
+body {
+    margin: 0;
+    background: #F7F3EC;
+    color: #252525;
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+::selection { background: #C98272; color: #fff; }
+
+h1, h2, h3, h4, .font-serif { font-family: 'Cormorant Garamond', serif; }
+
+.overline { font-size: 0.72rem; letter-spacing: 0.28em; text-transform: uppercase; }
+
+.reveal-mask { overflow: hidden; display: block; }
+
+/* thin scrollbar */
+::-webkit-scrollbar { width: 9px; }
+::-webkit-scrollbar-track { background: #F7F3EC; }
+::-webkit-scrollbar-thumb { background: #DCCBB5; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #C98272; }
