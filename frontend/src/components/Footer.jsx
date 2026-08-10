@@ -52,7 +52,10 @@ const Footer = () => {
             <span className="hover:text-coral cursor-pointer transition-colors">{t.footer.terms}</span>
             <span className="hover:text-coral cursor-pointer transition-colors">{t.footer.cancel}</span>
           </div>
-          <span>© {new Date().getFullYear()} Stay Coral Collection. {t.footer.rights}</span>
+          <div className="flex items-center gap-6">
+            <span>© {new Date().getFullYear()} Stay Coral Collection. {t.footer.rights}</span>
+            <Link to="/admin/login" data-testid="footer-admin-link" className="hover:text-coral transition-colors">Admin</Link>
+          </div>
         </div>
       </div>
 

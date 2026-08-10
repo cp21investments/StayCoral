@@ -1,0 +1,38 @@
+{
+  "summary": "Re-tested the two reported fixes end-to-end. (1) Footer 'Admin' link: present and visible in the footer bottom bar on desktop (1920) and mobile (390), text 'Admin', click navigates to /admin/login which renders the admin login card (login-email / login-password / login-submit). (2) Admin login via login-submit button click works (no Enter needed) and lands on /admin dashboard with 5 properties. (3) ImageManager verified in the edit form for joya-de-cartagena: 'Fotos (la primera es la portada)' label, image-dropzone, 3 existing thumbs with 'Portada' badge on thumb-0, image-url-input. (4) Real file upload via image-file-input -> POST /api/admin/upload 200, new thumb appended with src /api/images/stay-coral/properties/<uuid>.png, image actually renders (naturalWidth=8, GET 200 image/png). (5) Hover controls work: image-make-cover-N promotes to index 0, image-move-right-0 swaps order, image-url-add appends a pasted URL, image-delete-N removes. (6) property-form-save persisted the images array (verified via GET /api/properties/joya-de-cartagena) and the modal closed with a 'Saved' toast; seeded data restored to its original 3 images. Backend: new pytest module test_upload.py (6 cases) + existing suite = 31/32 passing. Zero console errors during the whole admin flow.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/images/{path}", "issue": "Requesting a non-existent object returns 500 instead of 404. Emergent object storage replies 500 (not 404) for missing keys, so the retry/404 branch never fires and r.raise_for_status() raises HTTPStatusError -> 500 + stack trace in backend log. Any deleted/stale image URL saved on a property will surface as a 500 to the browser. Treat non-2xx from storage as 404."},
+      {"endpoint": "POST /api/admin/upload", "issue": "Content type is derived only from the filename extension; a renamed non-image (e.g. exe.png) is accepted and stored. Consider magic-byte validation. Also no image re-encode/resize, so a 15MB original is served as-is to public visitors."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Footer bottom bar", "issues": ["The 'Admin' link uses text-ivory/50 on the charcoal footer (~3.5:1 contrast) — below WCAG AA 4.5:1 for 12px text. It is intentionally discreet but consider ivory/70.", "Uploaded thumbnails have no per-item progress/removal confirmation; deleting a thumb is instant with no undo (low risk, but destructive on a cover photo)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_upload.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Map any non-2xx response from object storage in GET /api/images/{path} to a 404 (currently returns 500 for missing images)."
+  ],
+  "critical_code_review_comments": [
+    "server.py serve_image(): only status 404 is handled for a cache miss; storage returns 500 for missing objects so raise_for_status() leaks a 500. Wrap in try/except httpx.HTTPStatusError -> HTTPException(404).",
+    "Dashboard.jsx is now 237 lines with 3 components (Dashboard, PropertyForm, ImageManager) in one file — extract ImageManager into its own module before it grows.",
+    "Open items from iteration_1 remain unfixed: navbar/logo overlap in ES at 1024-1400px, no-op $setOnInsert seed backfill, CORS '*' with allow_credentials=True, PUT accepting client-supplied id/slug, no login throttling."
+  ],
+  "updated_files": ["/app/backend/tests/test_upload.py (new)"],
+  "success_rate": {"backend": "97% (31/32)", "frontend": "100% (all footer-admin-link + ImageManager flows pass)"},
+  "seed_data_creation": "Uploaded 3 throwaway 1px PNGs to object storage (TEST_pixel.png, TEST_pixel2.png, TEST_qa_pixel.png). joya-de-cartagena was edited and restored to its original 3 seed images; all 5 seeded properties intact, 0 inquiries.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "cp21investements@gmail.com / Jipocapoipo07! — verified working at /admin/login",
+  "context_for_next_testing_agent": "Backend suites: /app/backend/tests/backend_test.py (26 cases) and /app/backend/tests/test_upload.py (6 cases, upload auth/type/serve/persistence). Only failing case is test_serve_unknown_image_404 (real backend bug, 500 instead of 404). Real property slugs: joya-de-cartagena, mirador-del-caribe, entre-mar-y-reloj, brisa-de-manga-i, brisas-de-manga-ii (note: 'coral-collection-ctg' in the review request is the host name, not a slug). ImageManager testids: image-dropzone, image-file-input, image-thumb-N, image-make-cover-N, image-move-left/right-N, image-delete-N, image-url-input/add; hover the thumb before clicking the overlay buttons.",
+  "rca_of_the_issue": "Both reported user issues are resolved: the Admin entry point now exists (Footer.jsx footer-admin-link -> /admin/login) and the photo uploader (ImageManager) is wired to POST /api/admin/upload with the JWT from localStorage via the axios interceptor; multipart works because api.js does not force a JSON content-type. Remaining defect: object-storage misses return 500 instead of 404 from GET /api/images/{path}."
+}

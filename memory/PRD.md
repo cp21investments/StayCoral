@@ -35,3 +35,8 @@ Owner to upload real images + confirm amenities per property; then connect a boo
 - Backend: POST /api/admin/upload (JWT, valida JPG/PNG/WEBP/GIF/HEIC, máx 15MB) y GET /api/images/{path} (público, cache 1 año).
 - Frontend: componente ImageManager en el formulario de propiedades del admin — drag & drop, multi-subida, eliminar, reordenar (flechas), botón "hacer portada", input opcional de URL.
 - Probado: curl e2e (upload 200, serve 200, sin auth 401, tipo inválido 400) + screenshot del panel admin OK.
+
+## Update — Junio 2026 (2): Acceso al Admin + fix 404
+- Bug reportado: el usuario no encontraba el login del admin (no había enlace visible). Fix: enlace discreto "Admin" en la barra inferior del footer (data-testid="footer-admin-link") → /admin/login.
+- Fix backend: GET /api/images/{path} ahora devuelve 404 (no 500) para imágenes inexistentes.
+- Verificado por testing_agent (iteration_2.json): footer link, login, ImageManager completo (subir/reordenar/portada/eliminar/persistencia) — frontend 100%, backend 31/32 → 32/32 tras el fix 404.

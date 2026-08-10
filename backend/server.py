@@ -250,9 +250,8 @@ async def serve_image(path: str):
         if r.status_code == 404:
             key = await init_storage(force=True)
             r = await c.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key})
-    if r.status_code == 404:
+    if r.status_code != 200:
         raise HTTPException(status_code=404, detail="Image not found")
-    r.raise_for_status()
     return Response(content=r.content, media_type=r.headers.get("Content-Type", "image/jpeg"),
                     headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
