@@ -9,7 +9,7 @@ import PropertyCard from "../components/PropertyCard";
 
 const IMG = {
   hero: "https://images.unsplash.com/photo-1535528775514-4b2e1ce44dda?crop=entropy&cs=srgb&fm=jpg&q=90&w=2200",
-  intro: "https://images.unsplash.com/photo-1643376452350-97eadd2c417f?crop=entropy&cs=srgb&fm=jpg&q=85&w=1400",
+  intro: "https://images.unsplash.com/photo-1715503485664-075d84912e74?crop=entropy&cs=srgb&fm=jpg&q=85&w=1400",
   feature: "https://images.unsplash.com/photo-1715503485452-89d50b42ff5d?crop=entropy&cs=srgb&fm=jpg&q=90&w=2200",
   final: "https://images.unsplash.com/photo-1633627397446-04c7fca71c74?crop=entropy&cs=srgb&fm=jpg&q=90&w=2200",
   cartagena: [
@@ -51,7 +51,7 @@ const Hero = () => {
 
       <motion.div style={{ opacity }} className="relative z-10 h-full max-w-7xl mx-auto px-6 md:px-10 flex flex-col justify-center">
         <FadeIn delay={0.2}><span className="overline text-ivory/80">{t.hero.brand}</span></FadeIn>
-        <h1 className="mt-5 font-serif text-ivory text-[3.2rem] leading-[1.02] md:text-8xl md:leading-[0.95] max-w-5xl font-light">
+        <h1 className="mt-5 font-serif text-ivory text-[3.2rem] leading-[1.02] md:text-8xl md:leading-[0.95] max-w-5xl font-medium">
           <RevealText lines={t.hero.title.split(" ").reduce((acc, w, i) => {
             const li = Math.floor(i / 3); acc[li] = (acc[li] ? acc[li] + " " : "") + w; return acc;
           }, [])} startDelay={0.35} stagger={0.14} />
@@ -98,7 +98,7 @@ const Intro = () => {
         </div>
         <Reveal delay={0.15} className="relative">
           <div className="overflow-hidden rounded-2xl aspect-[4/5]">
-            <img src={IMG.intro} alt="Elegant boutique interior in Cartagena" loading="lazy" className="w-full h-full object-cover" />
+            <img src={IMG.intro} alt="Torre del Reloj desde la Plaza de los Coches, Cartagena" loading="lazy" className="w-full h-full object-cover" />
           </div>
           <div className="absolute -bottom-6 -left-6 bg-coffee text-ivory px-7 py-5 rounded-xl hidden md:block">
             <div className="font-serif text-3xl">05</div>
