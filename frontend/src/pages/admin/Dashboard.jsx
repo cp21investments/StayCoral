@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { LogOut, Plus, Pencil, Trash2, X, Inbox, Home as HomeIcon, UploadCloud, Star, ChevronLeft, ChevronRight, Loader2, Link as LinkIcon } from "lucide-react";
+import { LogOut, Plus, Pencil, Trash2, X, Inbox, Home as HomeIcon, UploadCloud, Star, ChevronLeft, ChevronRight, Loader2, Link as LinkIcon, CalendarDays, MessageSquareQuote } from "lucide-react";
 import { api, getProperties } from "../../lib/api";
+import BookingsTab from "./BookingsTab";
+import ReviewsTab from "./ReviewsTab";
 
 const EMPTY = {
   slug: "", name: "", category: "historic", location: "", tagline: "",
   short_desc: "", description: "", guests: 4, bedrooms: 1, bathrooms: 1,
   amenities: [], images: [], airbnb_url: "", booking_url: "", featured: false,
   order: 99, lat: 10.4236, lng: -75.5518,
+  price_night: 0, cleaning_fee: 0, currency: "COP", ical_url: "",
 };
 
 export default function Dashboard() {
@@ -16,12 +19,15 @@ export default function Dashboard() {
   const [tab, setTab] = useState("properties");
   const [props, setProps] = useState([]);
   const [inquiries, setInquiries] = useState([]);
+  const [bookings, setBookings] = useState([]);
   const [editing, setEditing] = useState(null);
 
   const load = () => getProperties().then(setProps).catch(() => {});
+  const loadBookings = () => api.get("/admin/bookings").then((r) => setBookings(r.data)).catch(() => {});
   useEffect(() => {
     api.get("/auth/me").catch(() => nav("/admin/login"));
     load();
+    loadBookings();
     api.get("/admin/inquiries").then((r) => setInquiries(r.data)).catch(() => {});
   }, [nav]);
 
@@ -52,10 +58,15 @@ export default function Dashboard() {
       </header>
 
       <div className="max-w-6xl mx-auto px-6 md:px-10 py-10">
-        <div className="flex gap-2 mb-8">
-          <button onClick={() => setTab("properties")} className={`px-5 py-2 rounded-full text-xs tracking-widest uppercase ${tab === "properties" ? "bg-coffee text-ivory" : "bg-sand/40 text-coffee"}`}>Properties ({props.length})</button>
+        <div className="flex flex-wrap gap-2 mb-8">
+          <button data-testid="admin-tab-properties" onClick={() => setTab("properties")} className={`px-5 py-2 rounded-full text-xs tracking-widest uppercase ${tab === "properties" ? "bg-coffee text-ivory" : "bg-sand/40 text-coffee"}`}>Properties ({props.length})</button>
+          <button data-testid="admin-tab-bookings" onClick={() => setTab("bookings")} className={`px-5 py-2 rounded-full text-xs tracking-widest uppercase flex items-center gap-2 ${tab === "bookings" ? "bg-coffee text-ivory" : "bg-sand/40 text-coffee"}`}><CalendarDays size={14}/> Bookings ({bookings.filter((b) => b.status === "pending").length})</button>
+          <button data-testid="admin-tab-reviews" onClick={() => setTab("reviews")} className={`px-5 py-2 rounded-full text-xs tracking-widest uppercase flex items-center gap-2 ${tab === "reviews" ? "bg-coffee text-ivory" : "bg-sand/40 text-coffee"}`}><MessageSquareQuote size={14}/> Reviews</button>
           <button data-testid="admin-tab-inquiries" onClick={() => setTab("inquiries")} className={`px-5 py-2 rounded-full text-xs tracking-widest uppercase flex items-center gap-2 ${tab === "inquiries" ? "bg-coffee text-ivory" : "bg-sand/40 text-coffee"}`}><Inbox size={14}/> Inquiries ({inquiries.length})</button>
         </div>
+
+        {tab === "bookings" && <BookingsTab bookings={bookings} reload={loadBookings} />}
+        {tab === "reviews" && <ReviewsTab properties={props} />}
 
         {tab === "properties" && (
           <>
@@ -104,6 +115,7 @@ function PropertyForm({ data, onClose, onSave }) {
     onSave({
       ...f,
       guests: +f.guests, bedrooms: +f.bedrooms, bathrooms: +f.bathrooms, order: +f.order,
+      price_night: +f.price_night || 0, cleaning_fee: +f.cleaning_fee || 0,
       lat: parseFloat(f.lat), lng: parseFloat(f.lng), featured: !!f.featured,
       amenities: f.amenities.split("\n").map((s) => s.trim()).filter(Boolean),
       images: f.images,
@@ -132,6 +144,12 @@ function PropertyForm({ data, onClose, onSave }) {
           <label className="text-xs text-coffee">Longitude<input value={f.lng} onChange={set("lng")} className={inp}/></label>
           <label className="text-xs text-coffee col-span-2">Airbnb URL<input value={f.airbnb_url || ""} onChange={set("airbnb_url")} className={inp}/></label>
           <label className="text-xs text-coffee col-span-2">Booking.com URL<input value={f.booking_url || ""} onChange={set("booking_url")} className={inp}/></label>
+          <label className="text-xs text-coffee">Precio / noche<input data-testid="prop-price-night" type="number" value={f.price_night} onChange={set("price_night")} className={inp}/></label>
+          <label className="text-xs text-coffee">Tarifa de limpieza<input data-testid="prop-cleaning-fee" type="number" value={f.cleaning_fee} onChange={set("cleaning_fee")} className={inp}/></label>
+          <label className="text-xs text-coffee">Moneda
+            <select data-testid="prop-currency" value={f.currency} onChange={set("currency")} className={inp}><option value="COP">COP</option><option value="USD">USD</option></select>
+          </label>
+          <label className="text-xs text-coffee">Airbnb iCal URL (sincroniza fechas ocupadas)<input data-testid="prop-ical-url" value={f.ical_url || ""} onChange={set("ical_url")} className={inp} placeholder="https://www.airbnb.com/calendar/ical/…"/></label>
           <label className="text-xs text-coffee col-span-2">Amenities (one per line)<textarea rows={4} value={f.amenities} onChange={set("amenities")} className={inp}/></label>
           <div className="col-span-2">
             <span className="text-xs text-coffee">Fotos (la primera es la portada)</span>

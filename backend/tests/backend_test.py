@@ -105,6 +105,8 @@ class TestProperties:
     def test_images_reachable(self, api_client):
         r = api_client.get(f"{BASE_URL}/api/properties/joya-de-cartagena")
         url = r.json()["images"][0]
+        if url.startswith("/"):
+            url = f"{BASE_URL}{url}"
         h = requests.get(url, timeout=30, stream=True)
         assert h.status_code == 200, f"image not reachable: {url}"
 

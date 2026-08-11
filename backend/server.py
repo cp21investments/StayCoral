@@ -11,7 +11,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
-import os, logging, uuid, bcrypt, jwt, httpx
+import os, logging, uuid, bcrypt, jwt, httpx, re
 
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
@@ -100,6 +100,28 @@ class Property(BaseModel):
     order: int = 0
     lat: Optional[float] = None
     lng: Optional[float] = None
+    price_night: int = 0
+    cleaning_fee: int = 0
+    currency: str = "COP"
+    ical_url: Optional[str] = None
+
+class ReviewInput(BaseModel):
+    property_slug: str
+    name: str
+    country: Optional[str] = ""
+    rating: int = Field(default=5, ge=1, le=5)
+    month: Optional[str] = ""
+    text: str
+
+class BookingInput(BaseModel):
+    property_slug: str
+    name: str
+    email: EmailStr
+    phone: Optional[str] = ""
+    checkin: str
+    checkout: str
+    guests: int = 1
+    message: Optional[str] = ""
 
 class InquiryInput(BaseModel):
     name: str
@@ -168,6 +190,112 @@ async def send_owner_email(d: dict):
         r.raise_for_status()
     except Exception as e:
         logger.error(f"Email send failed: {e}")
+
+
+# ---------- Reviews (public) ----------
+@api_router.get("/properties/{slug}/reviews")
+async def property_reviews(slug: str):
+    return await db.reviews.find({"property_slug": slug}, {"_id": 0}).sort("created_at", -1).to_list(100)
+
+
+# ---------- Availability & bookings ----------
+_ical_cache = {}
+
+async def fetch_ical_ranges(slug: str, url: str):
+    now = datetime.now(timezone.utc).timestamp()
+    cache_key = f"{slug}:{url}"
+    cached = _ical_cache.get(cache_key)
+    if cached and now - cached[0] < 1800:
+        return cached[1]
+    ranges = []
+    try:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as c:
+            r = await c.get(url)
+        r.raise_for_status()
+        for ev in re.findall(r"BEGIN:VEVENT(.*?)END:VEVENT", r.text, re.S):
+            s = re.search(r"DTSTART[^:]*:(\d{8})", ev)
+            e = re.search(r"DTEND[^:]*:(\d{8})", ev)
+            if s and e:
+                ranges.append({"start": _ical_date(s.group(1)), "end": _ical_date(e.group(1))})
+        _ical_cache[cache_key] = (now, ranges)
+    except Exception as ex:
+        logger.error(f"iCal fetch failed for {slug}: {ex}")
+    return ranges
+
+def _ical_date(d: str) -> str:
+    return f"{d[:4]}-{d[4:6]}-{d[6:]}"
+
+async def blocked_ranges(prop: dict):
+    ranges = []
+    if prop.get("ical_url"):
+        ranges += await fetch_ical_ranges(prop["slug"], prop["ical_url"])
+    bookings = await db.bookings.find(
+        {"property_slug": prop["slug"], "status": {"$in": ["pending", "approved"]}}, {"_id": 0}).to_list(500)
+    ranges += [{"start": b["checkin"], "end": b["checkout"]} for b in bookings]
+    return ranges
+
+@api_router.get("/properties/{slug}/availability")
+async def availability(slug: str):
+    prop = await db.properties.find_one({"slug": slug}, {"_id": 0})
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+    return {"blocked": await blocked_ranges(prop)}
+
+@api_router.post("/bookings")
+async def create_booking(inp: BookingInput):
+    prop = await db.properties.find_one({"slug": inp.property_slug}, {"_id": 0})
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+    today = datetime.now(timezone.utc).date().isoformat()
+    if inp.checkin < today or inp.checkout <= inp.checkin:
+        raise HTTPException(status_code=400, detail="Invalid dates")
+    for b in await blocked_ranges(prop):
+        if b["start"] < inp.checkout and inp.checkin < b["end"]:
+            raise HTTPException(status_code=409, detail="Dates not available")
+    nights = (datetime.fromisoformat(inp.checkout) - datetime.fromisoformat(inp.checkin)).days
+    price = prop.get("price_night") or 0
+    total = nights * price + (prop.get("cleaning_fee") or 0) if price else 0
+    doc = inp.model_dump()
+    doc.update({"id": str(uuid.uuid4()), "property_name": prop["name"], "nights": nights,
+                "total": total, "currency": prop.get("currency", "COP"), "status": "pending",
+                "created_at": datetime.now(timezone.utc).isoformat()})
+    await db.bookings.insert_one({**doc})
+    await send_booking_email(doc)
+    return {"status": "success", "id": doc["id"], "nights": nights, "total": total}
+
+async def send_booking_email(d: dict):
+    rows = "".join(
+        f"<tr><td style='padding:6px 12px;color:#3A2C25;font-weight:600'>{k}</td>"
+        f"<td style='padding:6px 12px;color:#252525'>{v or '—'}</td></tr>"
+        for k, v in [
+            ("Guest", d.get("name")), ("Email", d.get("email")), ("Phone/WhatsApp", d.get("phone")),
+            ("Property", d.get("property_name")), ("Check-in", d.get("checkin")),
+            ("Check-out", d.get("checkout")), ("Nights", d.get("nights")), ("Guests", d.get("guests")),
+            ("Total", f"{d.get('total'):,} {d.get('currency')}" if d.get("total") else "Sin precio configurado"),
+            ("Message", d.get("message")),
+        ]
+    )
+    html = f"""
+    <div style="font-family:Arial,sans-serif;background:#F7F3EC;padding:24px">
+      <table style="max-width:600px;margin:auto;background:#fff;border-radius:12px;overflow:hidden">
+        <tr><td style="background:#3A2C25;color:#F7F3EC;padding:20px 24px;font-size:20px">
+          Stay Coral Collection — New Booking Request</td></tr>
+        <tr><td style="padding:16px 12px"><table style="width:100%">{rows}</table></td></tr>
+        <tr><td style="padding:0 24px 20px;color:#3A2C25;font-size:13px">
+          Aprueba o rechaza esta solicitud desde el Panel Admin → Bookings.</td></tr>
+      </table>
+    </div>"""
+    payload = {"to": [OWNER_EMAIL], "subject": f"New booking request — {d.get('property_name')} ({d.get('checkin')})",
+               "html": html, "from_name": EMAIL_FROM_NAME}
+    if d.get("email"):
+        payload["contact_email"] = d["email"]
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.post(f"{EMAIL_BASE_URL}/api/v1/email/send",
+                             headers={"X-Email-Key": EMAIL_KEY}, json=payload)
+        r.raise_for_status()
+    except Exception as e:
+        logger.error(f"Booking email send failed: {e}")
 
 
 # ---------- Auth routes ----------
@@ -254,6 +382,51 @@ async def serve_image(path: str):
         raise HTTPException(status_code=404, detail="Image not found")
     return Response(content=r.content, media_type=r.headers.get("Content-Type", "image/jpeg"),
                     headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+# ---------- Admin bookings & reviews ----------
+class StatusInput(BaseModel):
+    status: str
+
+@api_router.get("/admin/bookings")
+async def admin_bookings(admin: dict = Depends(require_admin)):
+    return await db.bookings.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+@api_router.put("/admin/bookings/{bid}")
+async def update_booking(bid: str, inp: StatusInput, admin: dict = Depends(require_admin)):
+    if inp.status not in ("pending", "approved", "rejected"):
+        raise HTTPException(status_code=400, detail="Invalid status")
+    res = await db.bookings.update_one({"id": bid}, {"$set": {"status": inp.status}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return {"status": "updated"}
+
+@api_router.get("/admin/reviews")
+async def admin_reviews(admin: dict = Depends(require_admin)):
+    return await db.reviews.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+@api_router.post("/admin/reviews")
+async def create_review(inp: ReviewInput, admin: dict = Depends(require_admin)):
+    doc = inp.model_dump()
+    doc["id"] = str(uuid.uuid4())
+    doc["created_at"] = datetime.now(timezone.utc).isoformat()
+    await db.reviews.insert_one({**doc})
+    doc.pop("_id", None)
+    return doc
+
+@api_router.put("/admin/reviews/{rid}")
+async def update_review(rid: str, inp: ReviewInput, admin: dict = Depends(require_admin)):
+    res = await db.reviews.update_one({"id": rid}, {"$set": inp.model_dump()})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return {"status": "updated"}
+
+@api_router.delete("/admin/reviews/{rid}")
+async def delete_review(rid: str, admin: dict = Depends(require_admin)):
+    res = await db.reviews.delete_one({"id": rid})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return {"status": "deleted"}
 
 
 # ---------- Seed ----------

@@ -1,0 +1,55 @@
+{
+  "summary": "Full backend + frontend test of the new booking engine, availability/iCal fields, admin bookings & reviews, lightbox and Airbnb CTAs. Backend: 46/46 pytest tests pass (20 new in test_bookings_reviews.py + 26 regression in backend_test.py). Frontend: every requested flow verified end-to-end on the public preview URL — booking widget calendar with blocked dates, price math (650.000 x 3 + 80.000 = 2.030.000), request-to-book submit -> success panel, admin approve/reject with badge update, reviews CRUD reflected on the public property page, new property fields incl. ical_url persistence, price on property card, ES i18n strings, lightbox zoom/nav/counter, and regressions (ImageManager, inquiries tab, footer Admin link, home page). Only cosmetic issues found; no functional defects.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/properties/{slug}/availability", "issue": "iCal cache (_ical_cache) is keyed by slug only and holds for 30 min, so changing/removing ical_url in admin keeps serving stale blocked ranges until TTL expiry (and cache is per-worker). Key it by (slug, url) and invalidate on property update."},
+      {"endpoint": "POST /api/bookings", "issue": "No rate limiting / anti-abuse: each request triggers a real owner email; a bot can spam. Also no unique/atomic guard, so two concurrent identical requests can both pass the overlap check (TOCTOU double-book)."},
+      {"endpoint": "POST /api/auth/login", "issue": "Playbook deviation: no brute-force lockout (unlimited wrong-password attempts return 401) and token is returned in JSON for localStorage instead of an httpOnly cookie. CORS is allow_origins='*' with allow_credentials=True. bcrypt hash format verified OK ($2b$12$); seed_admin correctly re-hashes when ADMIN_PASSWORD changes."},
+      {"endpoint": "GET /api/properties/{slug}/reviews", "issue": "No pagination/limit cap (hard-coded to_list(100)); rating is not range-validated in ReviewInput (a 99 would be accepted; UI clamps stars to 5)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Header nav (ES locale)", "issue": "In Spanish at 1920px the 'CONTACTO' link right edge (x=971) collides with the centered 'STAY CORAL' logo (x=971) and renders as 'CONTACTOSTAY CORAL'. Longer ES labels overflow the nav slot.", "selector": "header a (Contacto) / centered logo", "priority": "MEDIUM"},
+      {"component": "PropertyDetail gallery", "issue": "Gallery thumbnail buttons that open the lightbox have no data-testid (had to select via 'property-detail img'). Add gallery-image-{i}.", "selector": "[data-testid=\"property-detail\"] img", "priority": "LOW"},
+      {"component": "Price formatting (PropertyCard / BookingWidget / BookingsTab)", "issue": "COP is rendered as '$ 650.000' with no currency marker, so COP vs USD is indistinguishable (spec asked for 'COP $X / night'). Use currencyDisplay:'code' or append the currency code.", "selector": "[data-testid=\"property-card-joya-de-cartagena\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin dashboard", "issues": ["Console React warning 'In HTML, <span> cannot be a child of <option>' originating from ReviewsTab.jsx line 55 option label ({n} ★) wrapped by the dev instrumentation — dev-only noise, but rendering the option label as a plain string (e.g. `${n} ★`) removes it."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_bookings_reviews.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/qa_cleanup.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix ES header overlap between 'Contacto' nav link and centered logo at >=1280px widths",
+    "Key the iCal cache by url (not slug) and bust it when a property's ical_url changes",
+    "Add basic rate limiting / honeypot to POST /api/bookings (real emails fire per request)",
+    "Optional: show currency code (COP/USD) alongside formatted prices",
+    "Optional: add data-testid to gallery thumbnails; add login lockout + httpOnly cookie if the auth playbook is required"
+  ],
+  "critical_code_review_comments": [
+    "server.py: _ical_cache keyed on slug with 30-min TTL causes stale availability after ical_url edits; also module-global so it is not shared/invalidated across workers.",
+    "server.py create_booking: overlap check and insert are not atomic — add a unique/compound guard or transaction to prevent concurrent double bookings.",
+    "server.py: no throttle on the public booking/inquiry endpoints that trigger outbound email.",
+    "ReviewInput.rating has no ge/le bounds; frontend clamps display only."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_bookings_reviews.py (new)",
+    "/app/backend/tests/qa_cleanup.py (new, QA data cleanup)",
+    "/app/backend/tests/backend_test.py (fixed test bug: relative /api/images URL now prefixed with BASE_URL)",
+    "/app/frontend/src/pages/admin/Dashboard.jsx (added missing data-testid=\"admin-tab-properties\")"
+  ],
+  "success_rate": {"backend": "100% (46/46)", "frontend": "100% of requested flows verified; 3 cosmetic issues"},
+  "seed_data_creation": "Left joya-de-cartagena with price_night=650000, cleaning_fee=80000, currency=COP (as instructed); ical_url restored to null. brisa-de-manga-i ical_url set then restored to empty. Created bookings via API/UI were all set to 'rejected' (dates freed); the pre-existing demo booking ef091d15 (2026-09-10 -> 2026-09-14) was restored to 'pending' so availability blocking stays demonstrable. All TEST_ reviews deleted.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "cp21investements@gmail.com / Jipocapoipo07! (from /app/memory/test_credentials.md) — works",
+  "context_for_next_testing_agent": "Server date Aug 11 2026 — use dates from Sept 2026 onward. Run `pytest tests/test_bookings_reviews.py tests/backend_test.py` from /app/backend (pytest.ini has -n 2 --dist loadscope). joya-de-cartagena now has price 650000/cleaning 80000 COP so the widget breakdown is testable. Blocked demo range: 2026-09-10 -> 2026-09-14 (calendar disables 10-13, checkout day 14 selectable = correct). Admin badge text is uppercased by CSS — assert case-insensitively. Each booking POST sends a real owner email; keep creations minimal and reject afterwards (see tests/qa_cleanup.py).",
+  "rca_of_the_issue": "No functional defect reproduced. Two earlier 'failures' were test-side: (1) backend_test.py test_images_reachable requested a relative /api/images path without the base URL (fixed); (2) admin status-badge assertions were case-sensitive while CSS uppercases the text — approve/reject actually work and persist (verified via GET /api/admin/bookings)."
+}

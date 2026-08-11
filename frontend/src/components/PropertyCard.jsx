@@ -32,6 +32,12 @@ const PropertyCard = ({ property, index = 0 }) => {
             <div>
               <h3 className="font-serif text-2xl md:text-3xl text-coffee leading-tight">{property.name}</h3>
               <p className="overline text-coral mt-2">{property.location}</p>
+              {property.price_night > 0 && (
+                <p className="text-coffee text-sm mt-2 font-medium">
+                  {new Intl.NumberFormat(property.currency === "COP" ? "es-CO" : "en-US", { style: "currency", currency: property.currency || "COP", currencyDisplay: "code", maximumFractionDigits: 0 }).format(property.price_night)}
+                  <span className="text-charcoal/50 font-normal"> / {t.bk.night}</span>
+                </p>
+              )}
             </div>
             <ArrowUpRight className="text-coffee/40 group-hover:text-coral group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-all duration-300 shrink-0 mt-1" size={22} />
           </div>

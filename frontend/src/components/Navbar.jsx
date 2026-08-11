@@ -39,7 +39,7 @@ const Navbar = () => {
         }`}
       >
         <div className="max-w-7xl mx-auto px-6 md:px-10 grid grid-cols-[1fr_auto_1fr] items-center">
-          <nav className={`hidden lg:flex items-center gap-5 xl:gap-8 justify-self-start text-[0.72rem] xl:text-[0.8rem] tracking-widest uppercase ${textCol}`}>
+          <nav className={`hidden lg:flex items-center gap-5 xl:gap-7 justify-self-start min-w-0 text-[0.72rem] tracking-widest uppercase ${textCol}`}>
             {links.map((l) => (
               <Link key={l.to} to={l.to} data-testid={`nav-${l.to.slice(1)}`} className="hover:text-coral transition-colors duration-300 whitespace-nowrap">
                 {l.label}
